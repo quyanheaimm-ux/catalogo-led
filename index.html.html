@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Pedidos LED</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <!-- Librería para generar PDFs -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc;
+        }
+
+        .product-card {
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        /* Animación de sacudida para el carrito */
+        @keyframes shake {
+            0% { transform: scale(1); }
+            25% { transform: scale(1.05); }
+            50% { transform: scale(0.95); }
+            100% { transform: scale(1); }
+        }
+
+        .cart-bump {
+            animation: shake 0.3s ease-in-out;
+        }
+
+        .cart-sticky {
+            position: sticky;
+            top: 20px;
+            max-height: calc(100vh - 40px);
+        }
+
+        /* Notificación flotante */
+        #toast {
+            visibility: hidden;
+            min-width: 250px;
+            background-color: #1e293b;
+            color: #fff;
+            text-align: center;
+            border-radius: 12px;
+            padding: 16px;
+            position: fixed;
+            z-index: 100;
+            left: 50%;
+            bottom: 30px;
+            transform: translateX(-50%);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2);
+        }
+
+        #toast.show {
+            visibility: visible;
+            animation: fadein 0.5s, fadeout 0.5s 2.5s;
+        }
+
+        @keyframes fadein {
+            from { bottom: 0; opacity: 0; }
+            to { bottom: 30px; opacity: 1; }
+        }
+
+        @keyframes fadeout {
+            from { bottom: 30px; opacity: 1; }
+            to { bottom: 0; opacity: 0; }
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+
+    <!-- Notificación Toast -->
+    <div id="toast">Producto agregado correctamente</div>
+
+    <div class="max-w-6xl mx-auto">
+        <header class="mb-10 text-center">
+            <h1 class="text-4xl font-extrabold text-slate-800 mb-2">Catálogo de Iluminación LED</h1>
+            <p class="text-slate-500">Selecciona tus productos, elige la base y personaliza tu pedido.</p>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            
+            <!-- Listado de Productos -->
+            <div class="lg:col-span-2 space-y-6" id="product-list">
+                <!-- Los productos se cargan mediante JS -->
+            </div>
+
+            <!-- Resumen del Pedido (Carrito) -->
+            <div class="lg:col-span-1">
+                <div id="main-cart" class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 cart-sticky">
+                    <h2 class="text-xl font-bold text-slate-800 mb-4 flex items-center">
+                        <i class="fas fa-shopping-cart mr-2 text-blue-600"></i> Resumen del Pedido
+                    </h2>
+                    
+                    <div id="cart-items" class="space-y-4 mb-6 max-h-96 overflow-y-auto pr-2">
+                        <p class="text-slate-400 text-center py-4">No hay productos seleccionados.</p>
+                    </div>
+
+                    <div class="border-t border-slate-100 pt-4">
+                        <div class="flex justify-between items-center mb-6">
+                            <span class="text-slate-600 font-medium">Total Estimado:</span>
+                            <span class="text-2xl font-bold text-blue-600" id="total-price">$0.00</span>
+                        </div>
+                        
+                        <button onclick="enviarPedido()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-xl transition duration-200 shadow-lg shadow-blue-200 flex items-center justify-center gap-2">
+                            <i class="fas fa-file-invoice"></i> Generar Pedido
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Modal de confirmación -->
+    <div id="modal" class="fixed inset-0 bg-black/50 hidden flex items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-2xl p-8 max-w-md w-full text-center">
+            <div class="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                <i class="fas fa-file-pdf text-2xl"></i>
+            </div>
+            <h3 class="text-2xl font-bold text-slate-800 mb-2">Pedido Preparado</h3>
+            <p class="text-slate-500 mb-6">Elige cómo deseas enviar el pedido a <b>Yufeng Ltd</b>:</p>
+            
+            <div class="space-y-3">
+                <button onclick="descargarPDF()" class="w-full bg-slate-800 text-white px-6 py-3 rounded-lg font-medium flex items-center justify-center gap-2">
+                    <i class="fas fa-download"></i> Descargar PDF
+                </button>
+                <button onclick="enviarPorEmail()" class="w-full bg-blue-600 text-white px-6 py-3 rounded-lg font-medium flex items-center justify-center gap-2">
+                    <i class="fas fa-envelope"></i> Enviar a yf06@yufengltd.com
+                </button>
+                <button onclick="enviarPorWhatsApp()" class="w-full bg-green-600 text-white px-6 py-3 rounded-lg font-medium flex items-center justify-center gap-2">
+                    <i class="fab fa-whatsapp"></i> Enviar a WhatsApp (+86)
+                </button>
+                <button onclick="closeModal()" class="w-full bg-slate-200 text-slate-700 px-6 py-3 rounded-lg font-medium">
+                    Cancelar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const productos = [
+            {
+                id: 1,
+                nombre: "Y8G",
+                descripcion: "17.000LM/Par 85W Unidad / 170W Par csp4575 8~36V Blanco 6000K",
+                precio: 0.00,
+                imagen: "https://yufengltd.com/wp-content/uploads/2023/09/H11-1.jpg",
+                bases: ["880", "H1", "H3", "H7", "H11", "9005", "9006", "5202", "9012", "H4", "H13", "9004", "9007"]
+            },
+            {
+                id: 2,
+                nombre: "Y7C",
+                descripcion: "12.000LM/Par 55W Unidad / 110W Par CSP4070 8~36V Blanco 6000K",
+                precio: 0.00,
+                imagen: "https://yufengltd.com/wp-content/uploads/2022/11/Y7C-750X350.jpg",
+                bases: ["880", "H1", "H3", "H7", "H11", "9005", "9006", "5202", "9012", "H4", "H13", "9004", "9007"]
+            },
+            {
+                id: 3,
+                nombre: "Y6",
+                descripcion: "11.000LM/Par 55W Unidad / 110W Par CSP4070 8~36V Blanco 6000K",
+                precio: 0.00,
+                imagen: "https://yufengltd.com/wp-content/uploads/2023/12/750X350.jpg",
+                bases: ["880", "H1", "H3", "H7", "H11", "9005", "9006", "5202", "9012", "H4", "H13", "9004", "9007"]
+            },
+            {
+                id: 4,
+                nombre: "Y10B",
+                descripcion: "7.000LM/Par 35W Unidad / 70W Par CSP4070 8~36V Blanco 6000K",
+                precio: 0.00,
+                imagen: "https://yufengltd.com/wp-content/uploads/2024/07/3-1.jpg",
+                bases: ["880", "H1", "H3", "H7", "H11", "9005", "9006", "5202", "9012", "H4", "H13", "9004", "9007"]
+            },
+            {
+                id: 5,
+                nombre: "Y7D",
+                descripcion: "12.000LM/Par 60W Unidad / 120W Par CSP4070 8~36V Blanco 6000K",
+                precio: 0.00,
+                imagen: "https://yufengltd.com/wp-content/uploads/2022/08/750X350-1.jpg",
+                bases: ["880", "H1", "H3", "H7", "H11", "9005", "9006", "5202", "9012", "H4", "H13", "9004", "9007"]
+            },
+            {
+                id: 6,
+                nombre: "Y10",
+                descripcion: "4.400LM/Par 22W Unidad / 44W Par CSP1860 8~36V Blanco 6000K",
+                precio: 0.00,
+                imagen: "https://yufengltd.com/wp-content/uploads/2022/10/Y10.jpg",
+                bases: ["880", "H1", "H3", "H7", "H11", "9005", "9006", "5202", "9012", "H4", "H13", "9004", "9007"]
+            },
+            {
+                id: 7,
+                nombre: "Y8",
+                descripcion: "20.000LM/Par 100W Unidad / 200W Par CSP4575 8~36V Blanco 6000K",
+                precio: 0.00,
+                imagen: "https://yufengltd.com/wp-content/uploads/2025/08/750.png",
+                bases: ["880", "H1", "H3", "H7", "H11", "9005", "9006", "5202", "9012", "H4", "H13", "9004", "9007"]
+            },            {
+                id: 8,
+                nombre: "Y9",
+                descripcion: "20.000LM/Par 100W Unidad / 200W Par CSP4575 8~36V Blanco 6000K",
+                precio: 0.00,
+                imagen: "https://yufengltd.com/wp-content/uploads/2025/03/Y9-750X350.png",
+                bases: ["880", "H1", "H3", "H7", "H11", "9005", "9006", "5202", "9012", "H4", "H13", "9004", "9007"]
+            },            {
+                id: 9,
+                nombre: "Y7",
+                descripcion: "16.000LM/Par 75W Unidad / 150W Par CSP3570 8~36V Blanco 6000K",
+                precio: 0.00,
+                imagen: "https://yufengltd.com/wp-content/uploads/2022/10/Y7.jpg",
+                bases: ["880", "H1", "H3", "H7", "H11", "9005", "9006", "5202", "9012", "H4", "H13", "9004", "9007"]
+            },            {
+                id: 10,
+                nombre: "Y7A",
+                descripcion: "20.000LM/Par 75W Unidad / 150W Par CSP3575 8~36V Blanco 6000K",
+                precio: 0.00,
+                imagen: "https://yufengltd.com/wp-content/uploads/2023/03/9006-3.jpg",
+                bases: ["880", "H1", "H3", "H7", "H11", "9005", "9006", "5202", "9012", "H4", "H13", "9004", "9007"]
+            },
+            {
+                id: 11,
+                nombre: "Y7B",
+                descripcion: "12.000LM/Par 75W Unidad / 150W Par CSP3570 8~36V Blanco 6000K",
+                precio: 0.00,
+                imagen: "https://yufengltd.com/wp-content/uploads/2022/11/750X350-4.jpg",
+                bases: ["880", "H1", "H3", "H7", "H11", "9005", "9006", "5202", "9012", "H4", "H13", "9004", "9007"]
+            },
+            {
+                id: 12,
+                nombre: "Y5",
+                descripcion: "20.000LM/Par 80W Unidad / 160W Par CSP3570 8~36V Blanco 6000K",
+                precio: 0.00,
+                imagen: "https://yufengltd.com/wp-content/uploads/2022/10/Y5.jpg",
+                bases: ["880", "H1", "H3", "H7", "H11", "9005", "9006", "5202", "9012", "H4", "H13", "9004", "9007"]
+            },
+            {
+                id: 13,
+                nombre: "Y5B",
+                descripcion: "10.000LM/Par 30W Unidad / 60W Par CSP3570 8~36V Blanco 6000K",
+                precio: 0.00,
+                imagen: "https://yufengltd.com/wp-content/uploads/2023/12/Y5B.jpg",
+                bases: ["880", "H1", "H3", "H7", "H11", "9005", "9006", "5202", "9012", "H4", "H13", "9004", "9007"]
+            },
+            {
+                id: 14,
+                nombre: "Y5C",
+                descripcion: "10.000LM/Par 80W Unidad / 160W Par CSP4575 8~36V Blanco 6000K",
+                precio: 0.00,
+                imagen: "https://yufengltd.com/wp-content/uploads/2024/07/3-3.jpg",
+                bases: ["880", "H1", "H3", "H7", "H11", "9005", "9006", "5202", "9012", "H4", "H13", "9004", "9007"]
+            },
+            {
+                id: 15,
+                nombre: "Y9B",
+                descripcion: "10.000LM/Par 40W Unidad / 80W Par CSP3575 8~36V Blanco 6000K",
+                precio: 0.00,
+                imagen: "https://yufengltd.com/wp-content/uploads/2023/12/9005-4.jpg",
+                bases: ["880", "H1", "H3", "H7", "H11", "9005", "9006", "5202", "9012", "H4", "H13", "9004", "9007"]
+            },
+            {
+                id: 16,
+                nombre: "Y6C",
+                descripcion: "12.000LM/Par 45W Unidad / 90W Par CSP4575 8~36V Blanco 6000K",
+                precio: 0.00,
+                imagen: "https://yufengltd.com/wp-content/uploads/2023/12/H1-1.jpg",
+                bases: ["880", "H1", "H3", "H7", "H11", "9005", "9006", "5202", "9012", "H4", "H13", "9004", "9007"]
+            },
+            {
+                id: 17,
+                nombre: "Y3",
+                descripcion: "10.000LM/Par 23W Unidad / 46W Par CSP3570 8~36V Blanco 6000K",
+                precio: 0.00,
+                imagen: "https://yufengltd.com/wp-content/uploads/2024/05/Y3A.jpg",
+                bases: ["880", "H1", "H3", "H7", "H11", "9005", "9006", "5202", "9012", "H4", "H13", "9004", "9007"]
+            },
+            {
+                id: 18,
+                nombre: "Y1",
+                descripcion: "10.000LM/Par 40W Unidad / 80W Par CSP3575 8~36V Blanco 6000K",
+                precio: 0.00,
+                imagen: "https://yufengltd.com/wp-content/uploads/2022/10/8%E9%9D%A2750X350.jpg",
+                bases: ["880", "H1", "H3", "H7", "H11", "9005", "9006", "5202", "9012", "H4", "H13", "9004", "9007"]
+            }
+        ];
+
+        let carrito = [];
+
+        function renderProductos() {
+            const container = document.getElementById('product-list');
+            container.innerHTML = productos.map(p => `
+                <div class="bg-white rounded-2xl border border-slate-200 overflow-hidden flex flex-col md:flex-row product-card">
+                    <div class="md:w-48 h-48 md:h-auto bg-slate-100">
+                        <img src="${p.imagen}" alt="${p.nombre}" class="w-full h-full object-cover" onerror="this.src='https://via.placeholder.com/400x400?text=Imagen+No+Disponible'">
+                    </div>
+                    <div class="p-6 flex-1 flex flex-col justify-between">
+                        <div>
+                            <div class="flex justify-between items-start mb-2">
+                                <h3 class="text-xl font-bold text-slate-800">${p.nombre}</h3>
+                                <span class="text-lg font-bold text-blue-600">$${p.precio.toFixed(2)}</span>
+                            </div>
+                            <p class="text-slate-500 text-sm mb-4">${p.descripcion}</p>
+                            
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-400 uppercase mb-1">Base de Coche</label>
+                                    <select id="base-${p.id}" class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                        ${p.bases.map(b => `<option value="${b}">${b}</option>`).join('')}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-400 uppercase mb-1">Cantidad</label>
+                                    <div class="flex items-center border border-slate-200 rounded-lg bg-slate-50 overflow-hidden">
+                                        <button onclick="updateQtyUI(${p.id}, -1)" class="px-3 py-2 hover:bg-slate-200 transition">-</button>
+                                        <input type="number" id="qty-${p.id}" value="1" min="1" class="w-full text-center bg-transparent text-sm font-bold focus:outline-none" readonly>
+                                        <button onclick="updateQtyUI(${p.id}, 1)" class="px-3 py-2 hover:bg-slate-200 transition">+</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <button id="btn-add-${p.id}" onclick="addToCart(${p.id})" class="w-full bg-slate-800 hover:bg-slate-900 text-white font-semibold py-2 rounded-lg transition-all duration-300 flex items-center justify-center gap-2">
+                            <i class="fas fa-plus-circle"></i> Agregar al Pedido
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function updateQtyUI(id, delta) {
+            const input = document.getElementById(`qty-${id}`);
+            let val = parseInt(input.value) + delta;
+            if (val < 1) val = 1;
+            input.value = val;
+        }
+
+        function showToast(mensaje) {
+            const toast = document.getElementById("toast");
+            toast.innerText = mensaje;
+            toast.className = "show";
+            setTimeout(() => { toast.className = toast.className.replace("show", ""); }, 3000);
+        }
+
+        function addToCart(id) {
+            const p = productos.find(x => x.id === id);
+            const base = document.getElementById(`base-${id}`).value;
+            const cantidad = parseInt(document.getElementById(`qty-${id}`).value);
+            const index = carrito.findIndex(item => item.id === id && item.base === base);
+
+            // Efecto Visual en el botón
+            const btn = document.getElementById(`btn-add-${id}`);
+            const originalHTML = btn.innerHTML;
+            const originalBG = btn.className;
+            
+            btn.innerHTML = `<i class="fas fa-check"></i> ¡Agregado!`;
+            btn.classList.replace('bg-slate-800', 'bg-green-600');
+            
+            setTimeout(() => {
+                btn.innerHTML = originalHTML;
+                btn.classList.replace('bg-green-600', 'bg-slate-800');
+            }, 800);
+
+            // Agregar al carrito real
+            if (index > -1) {
+                carrito[index].cantidad += cantidad;
+            } else {
+                carrito.push({ ...p, base, cantidad });
+            }
+
+            // Notificación Toast
+            showToast(`${p.nombre} agregado`);
+
+            // Animación en el carrito
+            const cartUI = document.getElementById('main-cart');
+            cartUI.classList.add('cart-bump');
+            setTimeout(() => cartUI.classList.remove('cart-bump'), 300);
+
+            renderCart();
+        }
+
+        function removeFromCart(index) {
+            carrito.splice(index, 1);
+            renderCart();
+        }
+
+        function renderCart() {
+            const container = document.getElementById('cart-items');
+            const totalEl = document.getElementById('total-price');
+            
+            if (carrito.length === 0) {
+                container.innerHTML = '<p class="text-slate-400 text-center py-4">No hay productos seleccionados.</p>';
+                totalEl.innerText = '$0.00';
+                return;
+            }
+
+            let total = 0;
+            container.innerHTML = carrito.map((item, index) => {
+                const subtotal = item.precio * item.cantidad;
+                total += subtotal;
+                return `
+                    <div class="flex items-start justify-between bg-slate-50 p-3 rounded-xl border border-slate-100">
+                        <div class="flex-1">
+                            <h4 class="font-bold text-slate-800 text-sm">${item.nombre}</h4>
+                            <div class="text-xs text-slate-500 mt-1">
+                                <span class="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded mr-1">${item.base}</span>
+                                x${item.cantidad}
+                            </div>
+                            <div class="text-blue-600 font-bold text-xs mt-1">$${subtotal.toFixed(2)}</div>
+                        </div>
+                        <button onclick="removeFromCart(${index})" class="text-slate-300 hover:text-red-500 transition ml-2">
+                            <i class="fas fa-times-circle"></i>
+                        </button>
+                    </div>
+                `;
+            }).join('');
+
+            totalEl.innerText = `$${total.toFixed(2)}`;
+        }
+
+        function enviarPedido() {
+            if (carrito.length === 0) {
+                alert("Por favor, agrega productos al pedido.");
+                return;
+            }
+            document.getElementById('modal').classList.remove('hidden');
+        }
+
+        function generarResumenTexto() {
+            let texto = "🛒 *NUEVO PEDIDO DE LUCES LED*\n\n";
+            let total = 0;
+            carrito.forEach(item => {
+                const sub = item.precio * item.cantidad;
+                total += sub;
+                texto += `• ${item.nombre}\n  Base: ${item.base} | Cant: ${item.cantidad}\n  Subtotal: $${sub.toFixed(2)}\n\n`;
+            });
+            texto += `💰 *TOTAL ESTIMADO: $${total.toFixed(2)}*`;
+            return texto;
+        }
+
+        function descargarPDF() {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            
+            doc.setFontSize(22);
+            doc.setTextColor(30, 41, 59);
+            doc.text("Resumen de Pedido LED", 20, 20);
+            
+            doc.setFontSize(12);
+            doc.setTextColor(100, 116, 139);
+            doc.text(`Fecha: ${new Date().toLocaleDateString()}`, 20, 30);
+            doc.text("Enviado a: yf06@yufengltd.com", 20, 36);
+            
+            doc.setDrawColor(200, 200, 200);
+            doc.line(20, 40, 190, 40);
+
+            let yPos = 50;
+            let total = 0;
+
+            doc.setFontSize(10);
+            doc.setFont("helvetica", "bold");
+            doc.text("Producto", 20, yPos);
+            doc.text("Base", 100, yPos);
+            doc.text("Cant.", 140, yPos);
+            doc.text("Subtotal", 170, yPos);
+            doc.setFont("helvetica", "normal");
+
+            yPos += 10;
+
+            carrito.forEach(item => {
+                const sub = item.precio * item.cantidad;
+                total += sub;
+                doc.text(item.nombre, 20, yPos);
+                doc.text(item.base, 100, yPos);
+                doc.text(item.cantidad.toString(), 140, yPos);
+                doc.text(`$${sub.toFixed(2)}`, 170, yPos);
+                yPos += 8;
+            });
+
+            doc.line(20, yPos, 190, yPos);
+            yPos += 10;
+            doc.setFontSize(14);
+            doc.setFont("helvetica", "bold");
+            doc.text(`TOTAL: $${total.toFixed(2)}`, 145, yPos);
+
+            doc.save(`Pedido_LED_Yufeng_${Date.now()}.pdf`);
+        }
+
+        function enviarPorEmail() {
+            const body = generarResumenTexto().replace(/\*/g, ''); 
+            const subject = encodeURIComponent("Nuevo Pedido de Luces LED - Cliente Web");
+            const bodyEncoded = encodeURIComponent(body);
+            const destinatario = "yf06@yufengltd.com";
+            
+            window.location.href = `mailto:${destinatario}?subject=${subject}&body=${bodyEncoded}`;
+        }
+
+        function enviarPorWhatsApp() {
+            const texto = encodeURIComponent(generarResumenTexto());
+            const numero = "8613288494042"; 
+            window.open(`https://wa.me/${numero}?text=${texto}`, '_blank');
+        }
+
+        function closeModal() {
+            document.getElementById('modal').classList.add('hidden');
+        }
+
+        window.onload = renderProductos;
+    </script>
+</body>
+</html>
